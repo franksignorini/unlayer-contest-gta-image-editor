@@ -1,0 +1,27 @@
+{
+  "case-001": {
+    "source": "image copy.png",
+    "width": 1440,
+    "height": 810
+  },
+  "case-002": {
+    "source": "image copy 7.png",
+    "width": 1098,
+    "height": 618
+  },
+  "case-003": {
+    "source": "image copy 3.png",
+    "width": 1440,
+    "height": 810
+  },
+  "case-004": {
+    "source": "image copy 8.png",
+    "width": 1440,
+    "height": 810
+  },
+  "case-005": {
+    "source": "image copy 6.png",
+    "width": 1000,
+    "height": 563
+  }
+}
