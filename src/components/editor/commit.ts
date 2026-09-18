@@ -1,11 +1,14 @@
 /**
  * Committing a pending tool panel.
  *
- * The editor has no "apply" in its API. While a tool panel is open its effect
- * is a live preview only: `getImage()` returns the exhibit byte-identical to
- * how it was before the panel opened, and the effect is flattened into the
- * canvas when the panel closes. `hasChanges()` latches true on the first edit
- * and cannot tell the two apart.
+ * The editor has no "apply" in its API. While a filter-style panel is open its
+ * effect is a preview, flattened into the exhibit only when the panel closes.
+ * On a canvas with no overlay objects `getImage()` returns the exhibit
+ * byte-identical to how it was before the panel opened; once a bar, marking,
+ * plant or stroke is on it, `getImage()` re-renders the live canvas and the
+ * preview shows — but it is still not part of the exhibit until the close.
+ * `hasChanges()` latches true on the first edit and cannot tell any of this
+ * apart.
  *
  * That combination costs the player their entire run. Drag DEFOCUS, watch the
  * photograph go soft, run out of clock — and what gets filed is the untouched
@@ -23,7 +26,12 @@
  */
 
 import type { ImageEditorInstance } from "@unlayer/react-image-editor";
-import { CLOSE_PANEL_LABEL } from "./editor-config";
+import {
+  CLOSE_PANEL_LABEL,
+  DEFOCUS_LABEL,
+  FLATTEN_LABEL,
+  NO_TREATMENT_LABEL,
+} from "./editor-config";
 
 /** How long to wait for a closed panel to flatten into the canvas. */
 const COMMIT_TIMEOUT_MS = 1400;
@@ -96,6 +104,106 @@ function closeControl(root: ParentNode | null): HTMLButtonElement | null {
 /** Whether a tool panel is open, i.e. whether an edit is being previewed. */
 export function isPanelOpen(root: ParentNode | null): boolean {
   return closeControl(root) !== null;
+}
+
+/**
+ * Close the open panel, which is what lands its work on the exhibit.
+ *
+ * The terminal's own APPLY control. The editor's close is a 14px glyph in the
+ * panel's corner, and nothing about it says "this is how the blur you are
+ * looking at reaches the photograph" — so the one control that commits a SCRUB
+ * was the one a new player never found. Same control, same click; this only
+ * puts it where the player is already reading. Returns whether one was open.
+ */
+export function closePanel(root: ParentNode | null): boolean {
+  const control = closeControl(root);
+  control?.click();
+  return control !== null;
+}
+
+/**
+ * Whether `getImage()` can see an open panel's preview right now: true when the
+ * canvas holds overlay objects (the export is a live re-render), false when it
+ * does not (the export is the cached base), null when that cannot be told.
+ *
+ * Read off the flatten control's `disabled` state — see FLATTEN_LABEL for why
+ * that is the same condition.
+ */
+export function exportShowsPreview(root: ParentNode | null): boolean | null {
+  const flatten = controlByTitle(root, FLATTEN_LABEL);
+  return flatten ? !flatten.disabled : null;
+}
+
+/** What the SCRUB panel is set to, as far as the DEFOCUS projection cares. */
+export interface ScrubReading {
+  /** The DEFOCUS slider's value, 0..100. */
+  defocus: number;
+  /**
+   * DEFOCUS is the only thing the panel is doing: no preset but NONE, and
+   * every other slider at rest. Only then does the model in
+   * lib/forensics/projection describe what will land.
+   */
+  modelled: boolean;
+  /**
+   * The preview is invisible to `getImage()` — the canvas holds no overlay
+   * objects, so the export is still the cached base. When this is false the
+   * live read already scores the preview, and projecting on top of it would
+   * blur an already-blurred frame.
+   */
+  hidden: boolean;
+}
+
+/**
+ * The slider a label belongs to — the nearest enclosing row that holds exactly
+ * one range input. Walks outward from our own label text, the same way
+ * `openPanelLabel` does, so no class name or position is involved.
+ */
+function sliderFor(label: HTMLElement): HTMLInputElement | null {
+  let scope: HTMLElement | null = label.parentElement;
+  for (let depth = 0; scope && depth < 4; depth++) {
+    const ranges = scope.querySelectorAll<HTMLInputElement>("input[type=range]");
+    if (ranges.length === 1) return ranges[0];
+    if (ranges.length > 1) return null;
+    scope = scope.parentElement;
+  }
+  return null;
+}
+
+/**
+ * Read the SCRUB panel, or null when it is not the panel on screen.
+ *
+ * Found through strings we set — the DEFOCUS label and the NONE preset's
+ * title — never through the library's own attributes. Anything that cannot be
+ * confirmed reads as `modelled: false`, which costs the player a projection and
+ * never shows them a wrong one.
+ */
+export function readScrubPanel(root: ParentNode | null): ScrubReading | null {
+  if (!root || !isPanelOpen(root)) return null;
+  const target = DEFOCUS_LABEL.toUpperCase();
+  let defocusInput: HTMLInputElement | null = null;
+  for (const el of root.querySelectorAll<HTMLElement>("span, label")) {
+    if (el.closest("button")) continue;
+    if ((el.textContent ?? "").trim().toUpperCase() !== target) continue;
+    defocusInput = sliderFor(el);
+    if (defocusInput) break;
+  }
+  if (!defocusInput) return null;
+
+  const defocus = Number(defocusInput.value);
+  if (!Number.isFinite(defocus)) return null;
+
+  const untreated =
+    controlByTitle(root, NO_TREATMENT_LABEL)?.getAttribute("aria-pressed") ===
+    "true";
+  const othersAtRest = [
+    ...root.querySelectorAll<HTMLInputElement>("input[type=range]"),
+  ].every((r) => r === defocusInput || Number(r.value) === 0);
+
+  return {
+    defocus,
+    modelled: untreated && othersAtRest,
+    hidden: exportShowsPreview(root) === false,
+  };
 }
 
 /**

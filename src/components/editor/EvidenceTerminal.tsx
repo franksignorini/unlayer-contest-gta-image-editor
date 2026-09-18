@@ -35,7 +35,7 @@ import {
 } from "@/components/hud/DeadlineClock";
 import { SuspectId } from "@/components/hud/SuspectId";
 import { ImageEditorFrame } from "./ImageEditorFrame";
-import { commitAndRead } from "./commit";
+import { closePanel, commitAndRead, readScrubPanel } from "./commit";
 import { CaseRail } from "./CaseRail";
 import { RailSpine } from "./RailSpine";
 import { ForensicRail } from "./ForensicRail";
@@ -103,14 +103,31 @@ export function EvidenceTerminal({
   // Ctrl/Cmd+Z and its redo, driving the editor's own REVERT / REAPPLY.
   useEditorShortcuts(editorRoot, editor !== null);
 
-  const { analysing, committedSeq, poke } = useLiveForensics({
+  // Read through the ref at call time, so the hook never holds a stale root.
+  const readScrub = useCallback(() => readScrubPanel(editorRoot.current), []);
+
+  const { analysing, committedSeq, poke, projection } = useLiveForensics({
     mission,
     editor,
     openedAt,
     containerRef: editorRoot,
     onResult: handleLiveResult,
     onDirtyChange,
+    readScrub,
   });
+
+  /**
+   * What the strip, the rail and the outcome read: the exhibit, or — while a
+   * SCRUB preview is being held out of the export — the modelled preview over
+   * it. The ticker and the dirty flag never see the projection; they describe
+   * the exhibit, and nothing has happened to the exhibit yet.
+   */
+  const shown = projection?.result ?? live;
+
+  // The editor's own close, from where the player is already reading.
+  const applyPanel = useCallback(() => {
+    closePanel(editorRoot.current);
+  }, []);
 
   const submit = useCallback(
     async (trigger: Submission["trigger"]) => {
@@ -340,10 +357,22 @@ export function EvidenceTerminal({
         </div>
 
         {/* the exhibit */}
-        <div className="flex min-h-0 flex-col gap-2.5 max-lg:order-first">
+        {/* `data-first-move` lights SCRUB on the editor's own rail until the
+            player has done something — see the first-move note in
+            globals.css. Nothing is drawn over the canvas for it. */}
+        <div
+          className="flex min-h-0 flex-col gap-2.5 max-lg:order-first"
+          data-first-move={
+            editor && !dirty && !panelOpen && !projection ? "" : undefined
+          }
+        >
           {/* Above the canvas, never over it: the editor has to stay
               pixel-true and clickable. */}
-          <SuspectId mission={mission} live={live} />
+          <SuspectId
+            mission={mission}
+            live={shown}
+            projected={projection !== null}
+          />
           <ImageEditorFrame
             image={mission.image}
             options={options}
@@ -357,9 +386,12 @@ export function EvidenceTerminal({
             stage={stage}
             dirty={dirty}
             pending={pending}
+            panelOpen={panelOpen}
             panelTool={panelTool}
-            live={live}
+            projectedDefocus={projection?.defocus ?? null}
+            live={shown}
             wipe={wipe}
+            onApply={applyPanel}
             onConfirmWipe={confirmWipe}
             onCancelWipe={() => setWipe("idle")}
             onSubmit={() => submit("manual")}
@@ -370,7 +402,8 @@ export function EvidenceTerminal({
         <div className="min-h-0">
           <ForensicRail
             mission={mission}
-            live={live}
+            live={shown}
+            projected={projection !== null}
             modifications={modifications}
             analysing={analysing}
             dirty={dirty}

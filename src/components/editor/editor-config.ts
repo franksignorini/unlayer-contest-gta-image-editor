@@ -51,6 +51,35 @@ export const REDO_LABEL = "REAPPLY";
 export const DEGRADE_LABEL = "DEGRADE";
 
 /**
+ * The DEFOCUS slider's label, and the SCRUB panel's "no treatment" preset —
+ * handles as well as copy, for the terminal's DEFOCUS projection.
+ *
+ * On a clean exhibit the editor keeps a filter preview out of `getImage()`, so
+ * the terminal models the blur itself (lib/forensics/projection). That is only
+ * honest while DEFOCUS is the ONLY thing the panel is doing, so `readScrubPanel`
+ * finds the slider by this label and checks the preset titled NONE is still the
+ * pressed one. If the library stops rendering either, the reader reports "not
+ * modelled" and the rail simply waits for the commit, as it always did.
+ */
+export const DEFOCUS_LABEL = "DEFOCUS";
+export const NO_TREATMENT_LABEL = "NONE";
+
+/**
+ * The toolbar's flatten control — the terminal's one window onto whether the
+ * canvas holds overlay objects, which is what decides whether `getImage()` can
+ * see an open panel's preview at all.
+ *
+ * Verified against editor 2.9.0: `getImage()` returns its cached base image
+ * while there are no bars, markings, plants or strokes on the canvas, and
+ * re-renders the live canvas — open filter preview included — once there are.
+ * The editor disables this control on exactly the same condition. So a
+ * disabled FLATTEN LAYERS means the rail cannot read a SCRUB preview and the
+ * DEFOCUS projection should stand in; an enabled one means the rail already
+ * reads it and a projection would blur the blur a second time.
+ */
+export const FLATTEN_LABEL = "FLATTEN LAYERS";
+
+/**
  * Every string the editor shows, rewritten into the fiction.
  *
  * Keys verified against the shipping bundle — `cdn.unlayer.com/image-editor/
@@ -95,7 +124,7 @@ const EN_TRANSLATIONS: Record<string, string> = {
   "image_editor.toolbar.zoom_out": "WIDEN",
   "image_editor.toolbar.fit_to_screen": "FIT FRAME",
   "image_editor.toolbar.close": CLOSE_PANEL_LABEL,
-  "image_editor.toolbar.flatten": "FLATTEN LAYERS",
+  "image_editor.toolbar.flatten": FLATTEN_LABEL,
 
   // Layer / object names, as an examiner would log them.
   "image_editor.labels.image": "EXHIBIT",
@@ -112,7 +141,7 @@ const EN_TRANSLATIONS: Record<string, string> = {
   "image_editor.filters.group.effects": DEGRADE_LABEL,
 
   // Filter sliders, in forensic language.
-  "image_editor.filters.blur": "DEFOCUS",
+  "image_editor.filters.blur": DEFOCUS_LABEL,
   "image_editor.filters.pixelate": "MOSAIC",
   "image_editor.filters.brightness": "EXPOSURE",
   "image_editor.filters.contrast": "CONTRAST",
@@ -127,7 +156,7 @@ const EN_TRANSLATIONS: Record<string, string> = {
   // Presets. These are film stocks and photo-app looks out of the box, which
   // reads as a phone filter menu rather than a forensic terminal — renamed to
   // the kind of pass an examiner or a forger would actually run.
-  "image_editor.filters.none": "NONE",
+  "image_editor.filters.none": NO_TREATMENT_LABEL,
   "image_editor.filters.black_white": "MONOCHROME",
   "image_editor.filters.sepia": "AGED STOCK",
   "image_editor.filters.vintage": "ARCHIVE",
@@ -325,6 +354,12 @@ export interface ToolBriefing {
    * editor: the filter-style panels hold their effect back as a preview until
    * the panel closes, while anything placed on the canvas — a bar, a stroke, a
    * marking, a sticker — lands the moment it is made.
+   *
+   * "Reaches the exhibit" is about what gets filed, not about what the rail can
+   * see: once the canvas holds an overlay object, `getImage()` re-renders the
+   * live canvas and an open filter preview shows up in it (FLATTEN_LABEL has
+   * the detail). It still only becomes part of the exhibit when the panel
+   * closes, which is what the submit bar's APPLY does.
    */
   lands: "on-close" | "at-once";
   /**

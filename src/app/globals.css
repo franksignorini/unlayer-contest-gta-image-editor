@@ -637,6 +637,41 @@
 }
 
 /*
+ * The first move.
+ *
+ * A new player lands on a dense three-column terminal with the clock already
+ * running, and the terminal's first line tells them to start with SCRUB — a
+ * word that sits at the far end of the screen, in a rail of eight identical
+ * dark buttons. So until the exhibit has been touched, SCRUB beats slowly in
+ * the colour the rest of the terminal uses for the equipment talking back.
+ * The moment anything is done — any panel opened, any edit landed — it stops:
+ * this points at a door, it does not keep knocking.
+ *
+ * `data-first-move` is ours, set by EvidenceTerminal; the tool is found by the
+ * library's own `data-testid`, the same handle the rail tightening above uses.
+ * Additive, and inset so it never changes the button's size: if either handle
+ * stops matching, the rail looks exactly as it always did.
+ */
+@keyframes first-move {
+  0%,
+  100% {
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--color-cyan) 22%, transparent);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in srgb, var(--color-cyan) 85%, transparent),
+      inset 0 0 18px -6px var(--color-cyan);
+  }
+}
+
+[data-first-move]
+  .image-editor-root
+  button[data-testid="native-tool-filter"] {
+  animation: first-move 1.8s ease-in-out infinite;
+}
+
+/*
  * The toolbar's two actions, DISCARD and COMMIT TO EVIDENCE.
  *
  * These are not on the Tailwind greys the rest of this skin maps — they sit on
@@ -1208,6 +1243,15 @@
      audio control still reads as "on". */
   .animate-levels {
     transform: scaleY(0.7);
+  }
+
+  /* The first-move cue holds still at full strength instead of beating. */
+  [data-first-move]
+    .image-editor-root
+    button[data-testid="native-tool-filter"] {
+    animation: none !important;
+    box-shadow: inset 0 0 0 1px
+      color-mix(in srgb, var(--color-cyan) 85%, transparent);
   }
 
 }

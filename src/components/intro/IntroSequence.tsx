@@ -13,9 +13,15 @@
  * never sees a frame of the sequence, and there is no hydration mismatch.
  */
 
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { INTRO_EXIT_MS, INTRO_SCRIPT, INTRO_SEEN_KEY } from "@/data/intro";
-import { prefersReducedMotion } from "@/components/ui/primitives";
+import { prefersReducedMotion, usePageVisible } from "@/components/ui/primitives";
 import { IntroBackdrop } from "@/components/intro/IntroBackdrop";
 import type { IntroCard } from "@/types";
 
@@ -84,9 +90,21 @@ export function IntroSequence({ onComplete }: { onComplete(): void }) {
   );
   const [index, setIndex] = useState(0);
   const [leavingIndex, setLeavingIndex] = useState<number | null>(null);
+  /** Mirrors `leavingIndex` for the card timer, which must not depend on it. */
+  const leavingRef = useRef<number | null>(null);
   const [reduce] = useState(prefersReducedMotion);
 
-  const playing = seen === false;
+  // The sequence waits for an audience. Opened in a background tab — which is
+  // how anyone working through a list of entries opens them — it used to play
+  // all seven cards to nobody and hand over to a boot screen that then
+  // auto-advanced too. It starts the first time the page is actually seen,
+  // and pauses on the current card whenever it is hidden again.
+  const visible = usePageVisible();
+  const [started, setStarted] = useState(false);
+  if (!started && visible && seen === false) setStarted(true);
+
+  const playing = seen === false && started;
+  const running = playing && visible;
 
   const finish = useCallback(() => {
     try {
@@ -107,20 +125,28 @@ export function IntroSequence({ onComplete }: { onComplete(): void }) {
     else setIndex((i) => i + 1);
   }, [index, finish]);
 
-  // Card timing: an exit beat, then the cut.
+  // Card timing: an exit beat, then the cut. Only while someone is looking —
+  // hidden, the timers are dropped and the card gets its full time back when
+  // the page returns.
   useEffect(() => {
-    if (!playing) return;
+    if (!running) return;
+    // Hidden during its own exit beat: the card has already faded out, so
+    // resume straight into the cut rather than holding an empty frame.
+    if (leavingRef.current === index) {
+      const cut = setTimeout(advance, 0);
+      return () => clearTimeout(cut);
+    }
     const card = INTRO_SCRIPT[index];
-    const out = setTimeout(
-      () => setLeavingIndex(index),
-      Math.max(0, card.ms - INTRO_EXIT_MS)
-    );
+    const out = setTimeout(() => {
+      leavingRef.current = index;
+      setLeavingIndex(index);
+    }, Math.max(0, card.ms - INTRO_EXIT_MS));
     const cut = setTimeout(advance, card.ms);
     return () => {
       clearTimeout(out);
       clearTimeout(cut);
     };
-  }, [playing, index, advance]);
+  }, [running, index, advance]);
 
   // Impatience is a feature: anything advances a card, Escape leaves.
   useEffect(() => {

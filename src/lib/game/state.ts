@@ -16,7 +16,6 @@ import {
   type CaseRecords,
   deriveWantedLevel,
 } from "@/lib/game/rap-sheet";
-import { MISSIONS } from "@/data/missions";
 import { MISSIONS_BY_LOAD } from "@/lib/game/difficulty";
 import { operatorRating, type Grade } from "@/lib/game/rating";
 import type { CaseRecord } from "@/types";
@@ -66,8 +65,16 @@ export function gameReducer(state: GameState, action: GameAction): GameState {
       return state.phase === "boot" ? { ...state, phase: "intro" } : state;
 
     case "boot-complete":
+      // A returning player lands on the next case they have not filed — the
+      // same pick the dossier's "next case" makes — rather than on the first
+      // case in the index, which they may have closed already. A fresh record
+      // makes that the lightest case, as before.
       return state.phase === "boot"
-        ? { ...state, phase: "briefing", missionId: state.missionId ?? MISSIONS[0].id }
+        ? {
+            ...state,
+            phase: "briefing",
+            missionId: state.missionId ?? nextCaseId(state),
+          }
         : state;
 
     case "select-case":

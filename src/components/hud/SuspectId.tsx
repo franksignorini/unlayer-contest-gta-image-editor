@@ -88,9 +88,16 @@ function stateFor(legibility: number, croppedOut: boolean): ChipState {
 export function SuspectId({
   mission,
   live,
+  projected = false,
 }: {
   mission: Mission;
   live: ForensicResult | null;
+  /**
+   * `live` is a modelled SCRUB preview. The chips go out on it all the same —
+   * watching them go dark as the slider is released is the whole reason the
+   * projection exists — but the label says it is the preview talking.
+   */
+  projected?: boolean;
 }) {
   // Before the first analysis lands the exhibit really is untouched, so every
   // identifier is live. Showing zeros here would be a lie in the player's
@@ -116,8 +123,12 @@ export function SuspectId({
   return (
     <div className="flex shrink-0 items-stretch gap-2 border border-line bg-panel/70 px-2.5 py-2">
       <div className="flex shrink-0 flex-col justify-center pr-1">
-        <span className="u-label text-[8.5px] whitespace-nowrap text-faint">
-          IDENTIFIED BY
+        <span
+          className={`u-label text-[8.5px] whitespace-nowrap ${
+            projected ? "text-cyan" : "text-faint"
+          }`}
+        >
+          {projected ? "IF APPLIED" : "IDENTIFIED BY"}
         </span>
         <span
           className={`u-label text-[10px] whitespace-nowrap transition-colors duration-500 ${

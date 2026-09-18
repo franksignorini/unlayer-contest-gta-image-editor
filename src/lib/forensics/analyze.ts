@@ -20,9 +20,11 @@ import type {
   TargetFinding,
 } from "@/types";
 import {
+  type Drawable,
   type Gray,
   type Stats,
   clamp01,
+  drawableSize,
   survivingDetail,
   grayFromImage,
   loadImage,
@@ -101,10 +103,23 @@ export class ForensicAnalyzer {
   async analyze(submittedDataUrl: string): Promise<ForensicResult> {
     const startedAt = performance.now();
     const edited = await loadImage(submittedDataUrl);
-    const editSize = {
-      width: edited.naturalWidth,
-      height: edited.naturalHeight,
-    };
+    return this.analyzeSource(edited, startedAt);
+  }
+
+  /**
+   * The same analysis, over pixels that are already decoded.
+   *
+   * Exists for the terminal's SCRUB projection, which models a preview the
+   * editor has not committed yet on a canvas of its own. Scoring that canvas
+   * directly keeps it on exactly the code path a filed exhibit takes — one
+   * analysis, one set of constants — without encoding a full-resolution PNG
+   * only to decode it again a line later.
+   */
+  analyzeSource(
+    edited: Drawable,
+    startedAt: number = performance.now()
+  ): ForensicResult {
+    const editSize = drawableSize(edited);
     const origSize = this.mission.imageSize;
 
     // 1. Work out which part of the original this submission represents.
@@ -282,7 +297,7 @@ function buildProfile(
  * and everything else is flagged as missing.
  */
 function alignIntoOriginalFrame(
-  edited: HTMLImageElement,
+  edited: Drawable,
   transform: { crop: { x: number; y: number; w: number; h: number } },
   origSize: { width: number; height: number },
   reference: Gray

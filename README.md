@@ -104,6 +104,14 @@ size, driven only through its documented, supported API:
   shortcuts of its own), and a `MutationObserver` on the editor's DOM tells the
   terminal which panel is open and whether a tool's effect has actually landed
   on the canvas yet or is still a live preview.
+- **The rail reads a DEFOCUS before it lands.** On a clean exhibit the editor
+  keeps a filter preview out of `getImage()` until its panel closes — so the
+  game's central move had no feedback until you found the panel's close
+  button. Now, while you drag DEFOCUS, the terminal renders that same blur
+  itself and scores it through the same analyser: the identifiers go dark as
+  you release the slider, flagged *IF APPLIED*, and **APPLY ✓** lands it.
+  The model is measured against the real filter on all five cases and agrees
+  to within about a point.
 
 The full API contract this was built against — including the sharp edges that
 aren't in the library's own docs — is written up in

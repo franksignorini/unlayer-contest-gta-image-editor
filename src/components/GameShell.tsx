@@ -20,6 +20,7 @@ import {
 import { useRestoreSound, useSoundEnabled } from "@/components/audio/SoundToggle";
 import { audio } from "@/lib/audio/engine";
 import { MUSIC } from "@/lib/audio/music";
+import { warmExhibits } from "@/lib/preload";
 import { IntroSequence, forgetIntro } from "@/components/intro/IntroSequence";
 import { BootSequence } from "@/components/boot/BootSequence";
 import { CaseBriefing } from "@/components/case/CaseBriefing";
@@ -99,6 +100,13 @@ export function GameShell() {
   useEffect(() => {
     const records = loadRapSheet();
     if (Object.keys(records).length) dispatch({ type: "hydrate", records });
+  }, []);
+
+  // Start pulling the exhibits down while the cold open plays — a beat after
+  // mount, so the intro's own plates get the connection first. See preload.ts.
+  useEffect(() => {
+    const id = setTimeout(warmExhibits, 1200);
+    return () => clearTimeout(id);
   }, []);
 
   // Below `lg` every screen is its own scroll — briefing, terminal, analysis,

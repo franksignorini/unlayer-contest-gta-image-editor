@@ -20,7 +20,23 @@ import type {
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { RecDot } from "@/components/ui/primitives";
+import { safeGetImage } from "./commit";
 import { useJumpToDegrade } from "./useJumpToDegrade";
+
+/**
+ * How long to wait for the exhibit itself once the toolchain is up, before
+ * handing the editor over regardless. The terminal's clock has its own
+ * fallback; this one just keeps a stalled decode from holding the curtain
+ * down forever.
+ */
+const EXHIBIT_WAIT_MS = 12_000;
+const EXHIBIT_POLL_MS = 80;
+/**
+ * `getImage()` has the exhibit a beat before the canvas paints it — the editor
+ * records the base image and then loads it into fabric — so the curtain lifts
+ * a moment after, not on the same frame.
+ */
+const EXHIBIT_SETTLE_MS = 140;
 
 interface Props {
   image: string;
@@ -43,7 +59,18 @@ interface Props {
   minHeight?: number;
 }
 
-type LoadState = "loading" | "ready" | "failed";
+/**
+ * `loading` is the toolchain arriving from the CDN; `decoding` is the editor
+ * up but the exhibit not yet on its canvas.
+ *
+ * The wrapper's `onLoad` fires the moment `createEditor` resolves — before the
+ * editor has even fetched the image, which it then converts to a data URL and
+ * loads into its canvas. Treating that as "ready" armed the three-minute clock
+ * over an empty black canvas: ten seconds of it on a cold load, measured, with
+ * the tool rail live and nothing to use it on. Ready now means `getImage()`
+ * has something to return.
+ */
+type LoadState = "loading" | "decoding" | "ready" | "failed";
 
 export function ImageEditorFrame({
   image,
@@ -58,6 +85,39 @@ export function ImageEditorFrame({
   const [detail, setDetail] = useState<string | null>(null);
   const mountCount = useRef(0);
   const degrade = useJumpToDegrade(containerRef, state === "ready");
+
+  // Guards the decode wait against a terminal torn down mid-load. Set on
+  // mount rather than initialised, so StrictMode's rehearsal unmount does not
+  // leave it latched false.
+  const alive = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+
+  const awaitExhibit = (editor: ImageEditorInstance) => {
+    setState((s) => (s === "failed" ? s : "decoding"));
+    const started = performance.now();
+    const check = () => {
+      if (!alive.current) return;
+      const decoded = safeGetImage(editor) !== null;
+      if (decoded || performance.now() - started > EXHIBIT_WAIT_MS) {
+        setTimeout(
+          () => {
+            if (!alive.current) return;
+            setState((s) => (s === "failed" ? s : "ready"));
+            onReady(editor);
+          },
+          decoded ? EXHIBIT_SETTLE_MS : 0
+        );
+        return;
+      }
+      setTimeout(check, EXHIBIT_POLL_MS);
+    };
+    check();
+  };
 
   // A remount mid-case means the player just lost their work. In development
   // that is a bug worth shouting about, since the usual cause is an unstable
@@ -127,7 +187,9 @@ export function ImageEditorFrame({
       </div>
 
       <div className="relative min-h-0 grow border border-line bg-pit">
-        {state === "loading" && <EditorBooting />}
+        {(state === "loading" || state === "decoding") && (
+          <EditorBooting stage={state} />
+        )}
         {state === "failed" && <EditorFailed detail={detail} />}
 
         {/* The editor keeps its own pixel-true surface — no overlay is ever
@@ -146,10 +208,7 @@ export function ImageEditorFrame({
             options={options}
             minHeight={minHeight}
             style={{ height: "100%", width: "100%" }}
-            onLoad={(editor) => {
-              setState("ready");
-              onReady(editor);
-            }}
+            onLoad={awaitExhibit}
             onSave={({ dataUrl }) => onCommit(dataUrl)}
             onCancel={onDiscard}
             onLoadError={() => {
@@ -167,17 +226,19 @@ export function ImageEditorFrame({
   );
 }
 
-function EditorBooting() {
+function EditorBooting({ stage }: { stage: "loading" | "decoding" }) {
   return (
     <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-pit">
       <div className="u-label animate-flicker text-[11px] text-dim">
-        MOUNTING EXHIBIT
+        {stage === "loading" ? "MOUNTING EXHIBIT" : "DECODING EXHIBIT"}
       </div>
       <div className="h-[3px] w-52 overflow-hidden bg-panel-2">
         <div className="h-full w-1/3 animate-sweep bg-cyan" />
       </div>
       <p className="max-w-xs text-center font-mono text-[10px] leading-relaxed text-ghost">
-        Loading manipulation toolchain from forensic image service.
+        {stage === "loading"
+          ? "Loading manipulation toolchain from forensic image service."
+          : "Toolchain online. Pulling the capture off the evidence bus — the clock starts when it is on screen."}
       </p>
     </div>
   );

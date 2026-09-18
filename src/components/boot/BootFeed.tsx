@@ -15,10 +15,17 @@
  * The boxes are the missions' own evidence regions, the same pixel boxes the
  * forensic model scores, so the first thing a player is shown is the literal
  * list of things they are about to have to hide.
+ *
+ * It only ever cuts to a capture that has arrived. The exhibits are full
+ * resolution PNGs, a megabyte or more each, and on a cold load the feed used to
+ * cut on the clock regardless — to target boxes locking onto a black frame, or
+ * a flat grey rectangle — as the first picture a judge saw. Every capture is
+ * now requested the moment the feed mounts, in an invisible stack, and a cut
+ * whose picture is not in yet simply holds the current one a little longer.
  */
 
 import Image from "next/image";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Mission } from "@/types";
 import { MISSIONS_BY_LOAD } from "@/lib/game/difficulty";
 import { CameraFrame } from "@/components/hud/CameraFrame";
@@ -26,33 +33,93 @@ import { CameraFrame } from "@/components/hud/CameraFrame";
 /** How long each capture holds before the feed cuts to the next. */
 const FEED_MS = 2800;
 
+/**
+ * Shared by the invisible stack and the visible frame, so both resolve to the
+ * same image URL — which is what makes the stack a warm cache for the frame.
+ */
+const FEED_SIZES = "(max-width: 1024px) 100vw, 520px";
+
 const pct = (v: number, of: number) => `${(v / of) * 100}%`;
+
+/** The next capture after `from` whose picture has arrived, or `from` itself. */
+function nextArrived(from: number, arrived: ReadonlySet<string>): number {
+  for (let step = 1; step <= MISSIONS_BY_LOAD.length; step++) {
+    const i = (from + step) % MISSIONS_BY_LOAD.length;
+    if (arrived.has(MISSIONS_BY_LOAD[i].id)) return i;
+  }
+  return from;
+}
 
 export function BootFeed({ live }: { live: boolean }) {
   const [index, setIndex] = useState(0);
+  const [arrived, setArrived] = useState<ReadonlySet<string>>(new Set());
+  // Read inside the interval without restarting it on every arrival.
+  const arrivedRef = useRef(arrived);
+  useEffect(() => {
+    arrivedRef.current = arrived;
+  }, [arrived]);
+
+  const markArrived = (id: string) =>
+    setArrived((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
 
   useEffect(() => {
     if (!live) return;
     const id = setInterval(
-      () => setIndex((i) => (i + 1) % MISSIONS_BY_LOAD.length),
+      () =>
+        setIndex((i) => {
+          // Advance from the capture actually on screen — see `shownIndex`.
+          const got = arrivedRef.current;
+          const from = got.has(MISSIONS_BY_LOAD[i].id) ? i : nextArrived(i, got);
+          return nextArrived(from, got);
+        }),
       FEED_MS
     );
     return () => clearInterval(id);
   }, [live]);
 
-  const mission = MISSIONS_BY_LOAD[index];
+  // A feed that goes live before its first capture has arrived opens on
+  // whichever one has, rather than sitting on static waiting for the lightest.
+  const shownIndex = arrived.has(MISSIONS_BY_LOAD[index].id)
+    ? index
+    : nextArrived(index, arrived);
+  const mission = MISSIONS_BY_LOAD[shownIndex];
+  const onAir = live && arrived.has(mission.id);
 
   return (
     <div className="mt-3">
       <div className="relative aspect-video overflow-hidden border border-line bg-pit">
-        {live ? (
+        {/* Every capture, requested at once and never shown — the feed's
+            buffer. Same `sizes` as the visible frame, so the frame's request
+            is a cache hit by the time the feed cuts to it.
+
+            Eager, not next/image's default lazy. A lazy image waits for the
+            browser to see it on screen, and a page in a background tab is
+            never seen: a player who opened the link and looked away during
+            the cold open came back to a feed stuck on ACQUIRING SIGNAL with
+            every capture already downloaded. */}
+        <div aria-hidden="true" className="pointer-events-none absolute inset-0 opacity-0">
+          {MISSIONS_BY_LOAD.map((m) => (
+            <Image
+              key={m.id}
+              src={m.image}
+              alt=""
+              fill
+              loading="eager"
+              sizes={FEED_SIZES}
+              onLoad={() => markArrived(m.id)}
+              className="object-cover"
+            />
+          ))}
+        </div>
+
+        {onAir ? (
           // Keyed per capture: every cut remounts the frame, which is what
           // replays the lock-on and the cut flash instead of cross-fading.
           <FeedFrame key={mission.id} mission={mission} />
         ) : (
           <div className="u-scanlines absolute inset-0 grid place-items-center">
             <span className="u-label animate-flicker text-[9px] text-ghost">
-              NO SIGNAL · AWAITING SOURCE
+              {live ? "ACQUIRING SIGNAL…" : "NO SIGNAL · AWAITING SOURCE"}
             </span>
           </div>
         )}
@@ -60,11 +127,11 @@ export function BootFeed({ live }: { live: boolean }) {
 
       <div className="mt-2 flex items-baseline justify-between gap-3">
         <span className="font-mono text-[9px] text-faint tabular-nums">
-          {live
-            ? `FEED ${index + 1}/${MISSIONS_BY_LOAD.length} · ${mission.id} · ${mission.title.toUpperCase()}`
+          {onAir
+            ? `FEED ${shownIndex + 1}/${MISSIONS_BY_LOAD.length} · ${mission.id} · ${mission.title.toUpperCase()}`
             : "MUNICIPAL CCTV NETWORK"}
         </span>
-        {live && (
+        {onAir && (
           <span
             key={mission.id}
             className="u-rise u-label shrink-0 text-[9px] text-danger"
@@ -98,7 +165,8 @@ function FeedFrame({ mission }: { mission: Mission }) {
           src={mission.image}
           alt={`Surveillance feed, ${mission.location}`}
           fill
-          sizes="(max-width: 1024px) 100vw, 520px"
+          loading="eager"
+          sizes={FEED_SIZES}
           className="object-cover opacity-90"
         />
         <div className="feed-cut pointer-events-none absolute inset-0 z-[5] bg-white" />

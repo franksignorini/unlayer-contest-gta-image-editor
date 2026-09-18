@@ -36,6 +36,8 @@ export function useToolPanel(
   /** Latest analysed commit count, and the count when the open panel opened. */
   const seqRef = useRef(0);
   const seqAtPanelOpen = useRef<number | null>(null);
+  /** Which panel `seqAtPanelOpen` was taken for. */
+  const baselineFor = useRef<string | null>(null);
 
   useEffect(() => {
     seqRef.current = committedSeq;
@@ -49,15 +51,33 @@ export function useToolPanel(
       frame = 0;
       if (!isPanelOpen(root)) {
         seqAtPanelOpen.current = null;
+        baselineFor.current = null;
         setPending(false);
         setPanelOpen(false);
         setPanelTool(null);
         return;
       }
-      seqAtPanelOpen.current ??= seqRef.current;
+      const tool = openPanelLabel(root, RAIL_LABELS);
+      // Going straight from one tool to another never closes a panel — the
+      // close control is there the whole time — so the baseline has to be
+      // retaken when the panel changes identity, not only when one opens. It
+      // was not: a bar placed from BLOCK moved the counter, the player went
+      // directly to SCRUB, and SCRUB opened already "landed" — no PREVIEW ONLY
+      // over a blur the exhibit had not received.
+      // An unreadable heading is not a switch: only two known, different
+      // labels are, so a heading missed for one check cannot reset the notice
+      // under a panel that has already landed something.
+      const switched =
+        tool !== null &&
+        baselineFor.current !== null &&
+        tool !== baselineFor.current;
+      if (seqAtPanelOpen.current === null || switched) {
+        seqAtPanelOpen.current = seqRef.current;
+      }
+      if (tool !== null) baselineFor.current = tool;
       setPending(seqRef.current === seqAtPanelOpen.current);
       setPanelOpen(true);
-      setPanelTool(openPanelLabel(root, RAIL_LABELS));
+      setPanelTool(tool);
     };
     // The poll alone answered up to 250ms late, and the focus layout made that
     // visible: the panel squeezed the exhibit, then a beat later the rail

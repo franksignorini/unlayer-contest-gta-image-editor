@@ -29,6 +29,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { MISSIONS } from "@/data/missions";
 import { ForensicAnalyzer } from "@/lib/forensics/analyze";
+// The DEFOCUS model lives with the game, not here: the terminal projects a
+// SCRUB preview with this same rendering, so the harness and the live rail
+// cannot drift onto two different ideas of what the slider does.
+import { renderDefocus } from "@/lib/forensics/projection";
 import type { Mission, Outcome } from "@/types";
 
 interface Row {
@@ -71,33 +75,16 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 type Build = (img: HTMLImageElement, mission: Mission) => string;
 
 /**
- * The editor's DEFOCUS slider (0..100) expressed as a canvas blur radius.
+ * Whole-frame defocus, as the SCRUB > DEFOCUS slider applies it.
  *
- * Calibrated against the running editor, not derived: the filter is fabric's
- * Blur, whose strength is a texture-space delta scaled by image size, so a
- * fixed pixel radius would mean different things on a 1000px and a 1440px
- * exhibit. Sweeping the real slider on VC-004 and matching identification
- * against a canvas blur sweep put the relationship at roughly
- * `radius ≈ 0.42 * slider` on a 1440px-wide image, near enough linear across
- * the range. Approximate on purpose — it exists so the numbers below mean
- * something a player can dial in, not to reproduce fabric's kernel.
+ * The same rendering the terminal's live projection uses, edge clamping
+ * included. The harness used to blur plain, which fades every border towards
+ * black and reads as an exposure shift the editor never makes — up to five
+ * points of integrity too pessimistic on the narrower exhibits, measured
+ * against /forensics-editor. See lib/forensics/projection.
  */
-function defocusRadius(width: number, slider: number): number {
-  return width * 2.92e-4 * slider;
-}
-
-/** Whole-frame defocus, as the SCRUB > DEFOCUS slider applies it. */
 function defocus(slider: number): Build {
-  return (img) => {
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    const src = makeCanvas(w, h);
-    src.ctx.drawImage(img, 0, 0);
-    const dst = makeCanvas(w, h);
-    dst.ctx.filter = `blur(${defocusRadius(w, slider)}px)`;
-    dst.ctx.drawImage(src.canvas, 0, 0);
-    return dst.canvas.toDataURL("image/png");
-  };
+  return (img) => renderDefocus(img, slider).toDataURL("image/png");
 }
 
 /**
@@ -247,18 +234,13 @@ const desaturate: Build = (img) => {
  */
 function defocusThenCover(level: number): Build {
   return (img, mission) => {
-    const w = img.naturalWidth;
-    const h = img.naturalHeight;
-    const src = makeCanvas(w, h);
-    src.ctx.drawImage(img, 0, 0);
-    const dst = makeCanvas(w, h);
-    dst.ctx.filter = `blur(${defocusRadius(w, level)}px)`;
-    dst.ctx.drawImage(src.canvas, 0, 0);
-    dst.ctx.filter = "none";
+    const canvas = renderDefocus(img, level);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("no 2d context");
     const t = [...mission.targets].sort((a, b) => b.weight - a.weight)[0];
-    dst.ctx.fillStyle = "#000000";
-    dst.ctx.fillRect(t.region.x, t.region.y, t.region.w, t.region.h);
-    return dst.canvas.toDataURL("image/png");
+    ctx.fillStyle = "#000000";
+    ctx.fillRect(t.region.x, t.region.y, t.region.w, t.region.h);
+    return canvas.toDataURL("image/png");
   };
 }
 

@@ -13,13 +13,17 @@
  * be cancelled. A case file that opens on its own is the premise made literal —
  * the clock was running before the player arrived.
  *
- * Two rules keep it from being hostile:
+ * Three rules keep it from being hostile:
  *
  *  - it is always visible, with a countdown and a draining bar, so nothing
  *    happens that the player was not told was about to happen;
  *  - interaction buys time back. Anyone reading, scrolling, or reaching for the
  *    audio switch is engaged and must not be yanked mid-sentence. Only inaction
- *    advances the screen.
+ *    advances the screen;
+ *  - it only counts while the page can be seen. A judge who opened the game in
+ *    a background tab came back to the case index, having missed the screen
+ *    this whole countdown exists to show them — so hidden time is not counted,
+ *    and returning to the tab is treated as the interaction it is.
  *
  * Advancing costs the player nothing: the next screen is the case briefing,
  * which has no timer of its own — the deadline does not start until they open a
@@ -60,8 +64,26 @@ export function IntakeCountdown({ onFire }: { onFire(): void }) {
     window.addEventListener("keydown", nudge);
     window.addEventListener("wheel", nudge, { passive: true });
 
+    // Coming back to the tab is a return to the screen, not a reason to fire:
+    // it gets the same grace as any other sign of life. Background timers are
+    // throttled to a tick a minute after a while, so the per-tick pause below
+    // cannot be relied on to have covered the whole absence on its own.
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") nudge();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+
+    let lastTick = Date.now();
     const id = setInterval(() => {
-      const left = (deadline.current ?? 0) - Date.now();
+      const now = Date.now();
+      if (document.visibilityState === "hidden") {
+        // Nobody is watching: the intake waits for them.
+        deadline.current = (deadline.current ?? now) + (now - lastTick);
+        lastTick = now;
+        return;
+      }
+      lastTick = now;
+      const left = (deadline.current ?? 0) - now;
       setRemaining(Math.max(0, left));
       if (left <= 0 && !fired.current) {
         fired.current = true;
@@ -74,6 +96,7 @@ export function IntakeCountdown({ onFire }: { onFire(): void }) {
       window.removeEventListener("pointerdown", nudge);
       window.removeEventListener("keydown", nudge);
       window.removeEventListener("wheel", nudge);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [onFire]);
 

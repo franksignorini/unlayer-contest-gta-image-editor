@@ -48,8 +48,23 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
+/**
+ * Anything the analyser can read pixels from. A decoded image is the usual
+ * case; a canvas is how the terminal scores a SCRUB preview it has modelled
+ * itself, without round-tripping a full-resolution PNG through an encoder and
+ * a decoder just to read it straight back.
+ */
+export type Drawable = HTMLImageElement | HTMLCanvasElement | OffscreenCanvas;
+
+/** Pixel size of a Drawable — an image's natural size, a canvas's own. */
+export function drawableSize(d: Drawable): { width: number; height: number } {
+  return d instanceof HTMLImageElement
+    ? { width: d.naturalWidth, height: d.naturalHeight }
+    : { width: d.width, height: d.height };
+}
+
 export interface DrawSource {
-  source: HTMLImageElement;
+  source: Drawable;
   /** Region of the source to take. Defaults to the whole image. */
   srcRect?: { x: number; y: number; w: number; h: number };
   /** Where to put it in the destination. Defaults to filling the destination. */
@@ -72,12 +87,8 @@ export function rasterizeGray(
   ctx.fillStyle = background;
   ctx.fillRect(0, 0, w, h);
   for (const d of draws) {
-    const s = d.srcRect ?? {
-      x: 0,
-      y: 0,
-      w: d.source.naturalWidth,
-      h: d.source.naturalHeight,
-    };
+    const size = drawableSize(d.source);
+    const s = d.srcRect ?? { x: 0, y: 0, w: size.width, h: size.height };
     const t = d.dstRect ?? { x: 0, y: 0, w, h };
     ctx.drawImage(d.source, s.x, s.y, s.w, s.h, t.x, t.y, t.w, t.h);
   }
@@ -91,12 +102,10 @@ export function rasterizeGray(
 }
 
 /** Working-resolution luminance of a whole image, aspect preserved. */
-export function grayFromImage(img: HTMLImageElement, targetW: number): Gray {
+export function grayFromImage(img: Drawable, targetW: number): Gray {
+  const size = drawableSize(img);
   const w = Math.max(16, Math.round(targetW));
-  const h = Math.max(
-    16,
-    Math.round((img.naturalHeight / img.naturalWidth) * w)
-  );
+  const h = Math.max(16, Math.round((size.height / size.width) * w));
   return rasterizeGray(w, h, [{ source: img }]);
 }
 

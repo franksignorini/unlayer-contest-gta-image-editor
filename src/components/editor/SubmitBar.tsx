@@ -9,10 +9,13 @@
  *
  * It also carries the one piece of state the editor will not tell the player
  * itself: whether what they are looking at has actually landed on the exhibit.
- * An open tool panel is a live preview — the canvas, the forensic rail and the
- * submitted PNG all still hold the version from before it opened. Submitting
- * now closes the panel first, so nothing is lost either way, but the player
- * should be able to see the difference rather than find out from the verdict.
+ * SCRUB, CUT, FRAME and EDGE hold their work back until their panel closes, and
+ * the editor's close is a small glyph in the panel's corner that says nothing
+ * about committing anything. So whenever one of those panels is open the bar
+ * says what state the preview is in and offers APPLY — the same close, where
+ * the player is already reading. Submitting closes the panel too, so nothing is
+ * lost either way, but the player should see the difference rather than find
+ * out from the verdict.
  *
  * And it is where the editor's own DISCARD asks for confirmation. That control
  * used to do nothing at all — the wrapper exposes `onCancel` and nothing was
@@ -33,20 +36,33 @@ export function SubmitBar({
   stage,
   dirty,
   pending,
+  panelOpen,
   panelTool,
+  projectedDefocus,
   live,
   wipe,
+  onApply,
   onConfirmWipe,
   onCancelWipe,
   onSubmit,
 }: {
   stage: DeadlineStage;
   dirty: boolean;
+  /** A panel is open and nothing from it has reached the rail yet. */
   pending: boolean;
+  panelOpen: boolean;
   /** Rail label of the open tool panel, when it could be read. */
   panelTool: string | null;
+  /**
+   * The DEFOCUS setting the rail is currently projecting, when it is showing a
+   * modelled preview rather than the exhibit. See useLiveForensics.
+   */
+  projectedDefocus: number | null;
+  /** What the rail is showing — the exhibit, or the projection over it. */
   live: ForensicResult | null;
   wipe: WipeState;
+  /** Close the open panel, landing its work on the exhibit. */
+  onApply(): void;
   onConfirmWipe(): void;
   onCancelWipe(): void;
   onSubmit(): void;
@@ -62,6 +78,9 @@ export function SubmitBar({
     ? TOOL_BRIEFINGS.find((t) => t.rail === panelTool)
     : undefined;
   const lands = briefing?.lands ?? "on-close";
+  const holding = panelOpen && lands === "on-close";
+  const projected = projectedDefocus !== null;
+
   return (
     <div
       className={`sticky bottom-0 z-20 flex shrink-0 flex-wrap items-center justify-between gap-3 border px-3 py-2.5 backdrop-blur-sm ${
@@ -102,6 +121,55 @@ export function SubmitBar({
           <span className="u-label text-[9.5px] text-cyan">NOTHING TO DISCARD</span>{" "}
           — the exhibit is still exactly as the camera recorded it.
         </p>
+      ) : holding ? (
+        // Outranks the pressure line: under a deadline it is the more urgent
+        // of the two, because it is the one the player can still act on.
+        // The basis is what lets the bar wrap: without one, a phone gave the
+        // notice whatever the two buttons left over — about 80px, seven
+        // lines tall. With the case rail folded, a desktop column still
+        // holds all of it on one row.
+        <div className="flex min-w-0 flex-1 basis-80 items-center gap-3">
+          <p
+            className={`flex max-w-[54ch] items-center gap-2 font-mono text-[9.5px] leading-relaxed ${
+              projected ? "text-cyan" : pending ? "text-amber" : "text-dim"
+            }`}
+          >
+            <span
+              className={`size-1.5 shrink-0 ${
+                projected ? "bg-cyan" : pending ? "animate-blink bg-amber" : "bg-dim"
+              }`}
+            />
+            {projected ? (
+              <span>
+                <span className="u-label text-[9.5px]">
+                  PREVIEW · DEFOCUS {projectedDefocus}
+                </span>{" "}
+                — the rail is projecting it. Nothing reaches the exhibit until
+                you apply it.
+              </span>
+            ) : pending ? (
+              // Worded to be true before anything has been dragged as well as
+              // after: the notice shows the moment a panel opens.
+              <span>
+                <span className="u-label text-[9.5px]">PREVIEW ONLY</span> —
+                the exhibit has not received this yet. Apply it and the
+                forensic rail reads it.
+              </span>
+            ) : (
+              <span>
+                <span className="u-label text-[9.5px]">PREVIEW</span> — this
+                treatment is set on the exhibit when the panel closes.
+              </span>
+            )}
+          </p>
+          <Button
+            variant="signal"
+            onClick={onApply}
+            className="shrink-0 px-3 py-1.5 text-[9.5px]"
+          >
+            APPLY ✓
+          </Button>
+        </div>
       ) : pending && lands === "at-once" && briefing?.panelHint ? (
         <p className="flex max-w-[58ch] items-center gap-2 font-mono text-[9.5px] leading-relaxed text-dim">
           <span className="size-1.5 shrink-0 bg-cyan" />
@@ -110,22 +178,6 @@ export function SubmitBar({
               {briefing.rail} · LANDS AT ONCE
             </span>{" "}
             — {briefing.panelHint}
-          </span>
-        </p>
-      ) : pending ? (
-        // The pending notice outranks the pressure line: under a deadline it
-        // is the more urgent of the two, because it is the one the player can
-        // still do something about.
-        <p className="flex max-w-[56ch] items-center gap-2 font-mono text-[9.5px] leading-relaxed text-amber">
-          <span className="size-1.5 shrink-0 animate-blink bg-amber" />
-          <span>
-            {/* Worded to be true before anything has been dragged as well as
-                after: the notice shows the moment a panel opens, and "this
-                treatment is not on the exhibit" over an untouched slider named
-                a treatment that did not exist. */}
-            <span className="u-label text-[9.5px]">PREVIEW ONLY</span> — nothing
-            in this panel reaches the exhibit until you close it. The forensic
-            rail moves when it lands.
           </span>
         </p>
       ) : (
@@ -157,7 +209,7 @@ export function SubmitBar({
         {live && (
           <div className="hidden text-right md:block">
             <div className="u-label text-[8.5px] text-faint">
-              PROJECTED OUTCOME
+              {projected ? "IF APPLIED" : "PROJECTED OUTCOME"}
             </div>
             {/* Keyed on the outcome so a change lands as a slam rather than a
                 recolour. Crossing into ACCEPTED is the moment the player has

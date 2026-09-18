@@ -12,7 +12,7 @@
 import { WANTED_MAX } from "@/lib/forensics/score";
 import { audio } from "@/lib/audio/engine";
 import type { CSSProperties, ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /* ------------------------------------------------------------------ *
  * Panel
@@ -187,6 +187,31 @@ export function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+function subscribeVisibility(onChange: () => void) {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+/**
+ * Whether anyone can see the page right now.
+ *
+ * Presentation waits for its audience. A judge working through a list of
+ * entries opens them in background tabs, and every timed beat before the game
+ * proper — the cold open's cards, the boot screen's auto-advance — used to play
+ * out to an empty room, so the tab was sitting on the case index by the time
+ * anyone looked at it. The deadline clock deliberately does NOT use this: three
+ * minutes with no pause is the premise, not a presentation choice.
+ *
+ * Reads as visible on the server, so the first client render matches it.
+ */
+export function usePageVisible(): boolean {
+  return useSyncExternalStore(
+    subscribeVisibility,
+    () => document.visibilityState !== "hidden",
+    () => true
+  );
+}
+
 /* ------------------------------------------------------------------ *
  * Buttons
  * ------------------------------------------------------------------ */
@@ -201,7 +226,12 @@ export function Button({
 }: {
   children: ReactNode;
   onClick?: () => void;
-  variant?: "primary" | "ghost" | "danger";
+  /**
+   * `signal` is an instrument control — an action on the exhibit rather than
+   * on the run, like APPLY. Cyan, the colour the rest of the terminal uses
+   * for the equipment talking back.
+   */
+  variant?: "primary" | "ghost" | "signal" | "danger";
   disabled?: boolean;
   className?: string;
   type?: "button" | "submit";
@@ -213,6 +243,8 @@ export function Button({
       "bg-magenta text-white ring-1 ring-magenta/70 shadow-[0_0_22px_-6px_var(--color-magenta)] hover:bg-magenta/85 active:translate-y-px",
     ghost:
       "border border-line-hot text-dim hover:border-cyan/60 hover:text-cyan active:translate-y-px",
+    signal:
+      "border border-cyan/60 bg-cyan/5 text-cyan shadow-[0_0_16px_-8px_var(--color-cyan)] hover:bg-cyan/15 active:translate-y-px",
     danger:
       "bg-danger text-white ring-1 ring-danger/70 shadow-[0_0_22px_-6px_var(--color-danger)] hover:bg-danger/85 active:translate-y-px",
   }[variant];

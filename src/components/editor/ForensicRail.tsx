@@ -71,12 +71,19 @@ const TREATMENT_TONE: Record<TargetTreatment, string> = {
 export function ForensicRail({
   mission,
   live,
+  projected,
   modifications,
   analysing,
   dirty,
 }: {
   mission: Mission;
   live: ForensicResult | null;
+  /**
+   * `live` is a modelled SCRUB preview, not the exhibit. The gauges read it
+   * all the same — that is the point of it — but the flag says so, and the
+   * ticker below keeps describing only what has actually landed.
+   */
+  projected: boolean;
   modifications: EvidenceModification[];
   analysing: boolean;
   dirty: boolean;
@@ -99,10 +106,21 @@ export function ForensicRail({
         aside={
           <span
             className={`u-label text-[9px] ${
-              analysing ? "animate-blink text-cyan" : "text-faint"
+              analysing
+                ? "animate-blink text-cyan"
+                : projected
+                  ? "text-cyan"
+                  : "text-faint"
             }`}
           >
-            {analysing ? "SCANNING" : dirty ? "ALTERED" : "PRISTINE"}
+            {analysing
+              ? "SCANNING"
+              : // One word: at lg the header leaves ~60px beside its title.
+                projected
+                ? "PREVIEW"
+                : dirty
+                  ? "ALTERED"
+                  : "PRISTINE"}
           </span>
         }
       >
