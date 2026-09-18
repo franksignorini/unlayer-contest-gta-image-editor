@@ -372,6 +372,29 @@ function axisEdges(g: Gray): { edgeV: Float32Array; edgeH: Float32Array } {
   return { edgeV, edgeH };
 }
 
+/** Whether `map` crosses `T` anywhere in the `r`-pixel square around (x, y). */
+function edgeNearby(
+  map: Float32Array,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+  T: number
+): boolean {
+  const x0 = Math.max(0, x - r);
+  const x1 = Math.min(w - 1, x + r);
+  const y0 = Math.max(0, y - r);
+  const y1 = Math.min(h - 1, y + r);
+  for (let yy = y0; yy <= y1; yy++) {
+    const row = yy * w;
+    for (let xx = x0; xx <= x1; xx++) {
+      if (map[row + xx] > T) return true;
+    }
+  }
+  return false;
+}
+
 function blockVariances(g: Gray): {
   variance: Float32Array;
   blocksX: number;
@@ -494,13 +517,30 @@ function computeSignals(
   const { edgeV, edgeH } = axisEdges(aligned);
   const T = SCORING.hardEdgeThreshold;
   const quiet = T * SCORING.axisDominance;
+  // A cropped or reframed submission is only ever approximately re-registered
+  // — `estimateTransform` is a correlation match over a discrete grid, not a
+  // pixel-exact one — and a one- or two-pixel registration slip shifts every
+  // real edge in the photograph. Checked pointwise, that reads as thousands
+  // of "introduced" edges: an honest SQUARE crop with nothing else touched
+  // measured 100% hard edges, because the whole reprojected photograph no
+  // longer lined up with itself. `edgeNearby` absorbs that slip by checking a
+  // small neighbourhood instead of the exact pixel. A genuinely new edge — a
+  // drawn bar, a redaction rectangle — has nothing nearby in the original
+  // either way, so this costs the real detector nothing. An untouched-size
+  // submission is pixel-exact, so it keeps full precision (radius 0 degrades
+  // to the original point check).
+  const registrationSlop = frameLoss > 0 ? 2 : 0;
   let straight = 0;
   for (let y = 1; y < g.h - 1; y++) {
     for (let x = 1; x < g.w - 1; x++) {
       const i = y * g.w + x;
       if (seam[i]) continue;
-      const newV = edgeV[i] > T && profile.edgeV[i] <= T;
-      const newH = edgeH[i] > T && profile.edgeH[i] <= T;
+      const newV =
+        edgeV[i] > T &&
+        !edgeNearby(profile.edgeV, x, y, g.w, g.h, registrationSlop, T);
+      const newH =
+        edgeH[i] > T &&
+        !edgeNearby(profile.edgeH, x, y, g.w, g.h, registrationSlop, T);
       if ((newV && edgeH[i] < quiet) || (newH && edgeV[i] < quiet)) straight++;
     }
   }

@@ -101,6 +101,19 @@ export function GameShell() {
     if (Object.keys(records).length) dispatch({ type: "hydrate", records });
   }, []);
 
+  // Below `lg` every screen is its own scroll — briefing, terminal, analysis,
+  // dossier all run taller than the viewport. Nothing here is a single page a
+  // browser scroll-restores; it's one phase machine swapping unrelated layouts
+  // in place, and each one starts at its own top. Without this, scrolling down
+  // to read a case brief and then opening it carried that same offset into the
+  // terminal, landing partway down the case rail with the exhibit already
+  // scrolled past — on a laptop that's a surprise, on a phone it's the whole
+  // game. `caseOpenedAt` changes on both "open case" and "retry", so a retry
+  // also starts back at the top of the terminal it reset.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [state.phase, state.caseOpenedAt]);
+
   // Written back whenever the record changes. Cheap — five entries at most, and
   // only ever on a filing or a wipe.
   const records = state.records;
